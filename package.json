@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.74.0",
+    "@google-cloud/text-to-speech": "^6.4.0",
+    "framer-motion": "^12.35.0",
+    "react-confetti": "^6.4.0"
+  }
+}
