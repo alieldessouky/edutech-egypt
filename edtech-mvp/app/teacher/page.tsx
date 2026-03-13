@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { Lesson, Question, Attempt, loadLessons, saveLessons, loadAllAttempts, clearData, exportData, importData, deDuplicateLessons } from '../lib/storage';
 import { migrateToCloud } from '../lib/migration';
 import { supabase } from '../lib/supabase';
@@ -34,6 +35,118 @@ type ReviewAttempt = {
     }[];
 };
 
+/* ─── Shared style constants ─── */
+const S = {
+    card: {
+        backgroundColor: '#fff',
+        border: '1px solid #e8ecf0',
+        borderRadius: 14,
+        overflow: 'hidden' as const,
+    },
+    cardHeader: {
+        padding: '20px 24px',
+        borderBottom: '1px solid #f1f5f9',
+    },
+    cardBody: {
+        padding: 24,
+    },
+    sectionTag: {
+        display: 'inline-block' as const,
+        fontSize: 12,
+        fontWeight: 600 as const,
+        padding: '3px 10px',
+        borderRadius: 6,
+        marginBottom: 10,
+    },
+    sectionTitle: {
+        fontSize: 20,
+        fontWeight: 700 as const,
+        color: '#0f172a',
+        margin: '0 0 4px',
+        letterSpacing: -0.3,
+    },
+    sectionDesc: {
+        fontSize: 14,
+        color: '#64748b',
+        margin: 0,
+    },
+    input: {
+        width: '100%',
+        padding: '10px 14px',
+        fontSize: 14,
+        border: '1px solid #e2e8f0',
+        borderRadius: 10,
+        outline: 'none',
+        backgroundColor: '#fff',
+        color: '#1e293b',
+        transition: 'border-color 0.2s',
+        boxSizing: 'border-box' as const,
+    },
+    label: {
+        display: 'block' as const,
+        fontSize: 13,
+        fontWeight: 600 as const,
+        color: '#374151',
+        marginBottom: 6,
+    },
+    btnPrimary: {
+        display: 'inline-flex' as const,
+        alignItems: 'center' as const,
+        gap: 6,
+        padding: '10px 20px',
+        fontSize: 14,
+        fontWeight: 600 as const,
+        color: '#fff',
+        backgroundColor: '#1a56db',
+        border: 'none',
+        borderRadius: 10,
+        cursor: 'pointer',
+        transition: 'background-color 0.2s',
+    },
+    btnSecondary: {
+        display: 'inline-flex' as const,
+        alignItems: 'center' as const,
+        gap: 6,
+        padding: '8px 14px',
+        fontSize: 13,
+        fontWeight: 500 as const,
+        color: '#374151',
+        backgroundColor: '#fff',
+        border: '1px solid #e2e8f0',
+        borderRadius: 8,
+        cursor: 'pointer',
+        transition: 'all 0.2s',
+    },
+    btnDanger: {
+        display: 'inline-flex' as const,
+        alignItems: 'center' as const,
+        gap: 6,
+        padding: '8px 14px',
+        fontSize: 13,
+        fontWeight: 500 as const,
+        color: '#dc2626',
+        backgroundColor: '#fef2f2',
+        border: '1px solid #fecaca',
+        borderRadius: 8,
+        cursor: 'pointer',
+    },
+    badge: (bg: string, fg: string) => ({
+        display: 'inline-block' as const,
+        fontSize: 12,
+        fontWeight: 600 as const,
+        padding: '3px 10px',
+        borderRadius: 100,
+        backgroundColor: bg,
+        color: fg,
+    }),
+    emptyState: {
+        textAlign: 'center' as const,
+        padding: '32px 24px',
+        color: '#94a3b8',
+        fontSize: 14,
+    },
+};
+
 export default function TeacherPage() {
     const [lessons, setLessons] = useState<Lesson[]>([]);
     const [activeTabs, setActiveTabs] = useState<Record<string, 'podcast' | 'reader' | 'quiz'>>({});
@@ -57,7 +170,7 @@ export default function TeacherPage() {
     const [reviewAttempts, setReviewAttempts] = useState<ReviewAttempt[]>([]);
     const [loadingReview, setLoadingReview] = useState(false);
     const [expandedAttemptId, setExpandedAttemptId] = useState<string | null>(null);
-    const [expandedAttemptDetails, setExpandedAttemptDetails] = useState<any[]>([]); // Details for expanded
+    const [expandedAttemptDetails, setExpandedAttemptDetails] = useState<any[]>([]);
 
     // Student Progress State
     const [studentProgressData, setStudentProgressData] = useState<any[]>([]);
@@ -79,6 +192,11 @@ export default function TeacherPage() {
     const [correctIndex, setCorrectIndex] = useState(0);
     const [cleaning, setCleaning] = useState(false);
 
+    // UI state
+    const [showTools, setShowTools] = useState(false);
+
+    /* ─── Data loading (unchanged) ─── */
+
     const refreshData = async () => {
         try {
             const lessons = await loadLessons();
@@ -86,20 +204,16 @@ export default function TeacherPage() {
         } catch (err: any) {
             console.error('Failed to load lessons:', err);
         }
-
         try {
             const attempts = await loadAllAttempts();
             setAllAttempts(attempts);
         } catch (err: any) {
             console.error('Failed to load attempts:', err);
-            // This is likely the "demo_key" column error. 
-            // We just log it so the rest of the page still works.
         }
     };
 
     useEffect(() => {
         refreshData();
-        // Restore active class
         const savedClassId = localStorage.getItem('edtech_active_class_id_v1');
         if (savedClassId) {
             setActiveClassId(savedClassId);
@@ -125,15 +239,12 @@ export default function TeacherPage() {
     const fetchClassStats = async (classId: string) => {
         setLoadingStats(true);
         try {
-            // Count Students
             const { count: sCount, error: sError } = await supabase
                 .from('students')
                 .select('*', { count: 'exact', head: true })
                 .eq('class_id', classId);
-
             if (!sError) setStudentCount(sCount || 0);
 
-            // Count Attempts
             const { data: classLessons } = await supabase
                 .from('lessons')
                 .select('id')
@@ -145,12 +256,10 @@ export default function TeacherPage() {
                     .from('attempts')
                     .select('*', { count: 'exact', head: true })
                     .in('lesson_id', lessonIds);
-
                 if (!aError) setAttemptsCount(aCount || 0);
             } else {
                 setAttemptsCount(0);
             }
-
         } catch (e) {
             console.error('Error fetching stats:', e);
         } finally {
@@ -160,15 +269,12 @@ export default function TeacherPage() {
 
     const fetchReviewLessons = async (classId: string) => {
         try {
-            // Fetch lessons with questions via quizzes for review dropdown
             const { data, error } = await supabase
                 .from('lessons')
                 .select('id, title, quizzes(questions(*))')
                 .eq('class_id', classId)
                 .order('created_at', { ascending: false });
-
             if (data) {
-                // Map the nested structure to match ReviewLesson type
                 const mapped = data.map((l: any) => ({
                     id: l.id,
                     title: l.title,
@@ -184,47 +290,34 @@ export default function TeacherPage() {
     const fetchStudentProgress = async (classId: string) => {
         setLoadingProgress(true);
         try {
-            // Fetch all students in the class
             const { data: students, error: studentsError } = await supabase
                 .from('students')
                 .select('id, display_name')
                 .eq('class_id', classId);
-
             if (studentsError) throw studentsError;
-
             if (!students || students.length === 0) {
                 setStudentProgressData([]);
                 setLoadingProgress(false);
                 return;
             }
 
-            // Fetch student stats for all students
+            const studentIds = students.map(s => s.id);
+
             const { data: stats, error: statsError } = await supabase
                 .from('student_stats')
                 .select('*')
                 .in('student_id', studentIds);
-
             if (statsError) throw statsError;
 
-            // Fetch student progress for all students
             const { data: progress, error: progressError } = await supabase
                 .from('student_progress')
-                .select(`
-                    *,
-                    lessons (
-                        id,
-                        title
-                    )
-                `)
+                .select(`*, lessons (id, title)`)
                 .in('student_id', studentIds);
-
             if (progressError) throw progressError;
 
-            // Combine data for display
             const combined = students.map(student => {
                 const studentStat = stats?.find(s => s.student_id === student.id);
                 const studentProgress = progress?.filter(p => p.student_id === student.id) || [];
-
                 return {
                     student_id: student.id,
                     student_name: student.display_name,
@@ -245,9 +338,7 @@ export default function TeacherPage() {
                     }))
                 };
             });
-
             setStudentProgressData(combined);
-
         } catch (e) {
             console.error('Error fetching student progress:', e);
         } finally {
@@ -259,28 +350,16 @@ export default function TeacherPage() {
         setSelectedReviewLessonId(lessonId);
         setExpandedAttemptId(null);
         setExpandedAttemptDetails([]);
-        if (!lessonId) {
-            setReviewAttempts([]);
-            return;
-        }
-
+        if (!lessonId) { setReviewAttempts([]); return; }
         setLoadingReview(true);
         try {
-            // Fetch attempts header
             const { data, error } = await supabase
                 .from('attempts')
                 .select('id, created_at, score, students(display_name)')
                 .eq('lesson_id', lessonId)
                 .order('created_at', { ascending: false });
-
             if (error) throw error;
-            if (data) {
-                const mapped = data.map(d => ({
-                    ...d,
-                    score: d.score,
-                }));
-                setReviewAttempts(mapped as any);
-            }
+            if (data) setReviewAttempts(data.map(d => ({ ...d, score: d.score })) as any);
         } catch (e) {
             console.error('Error fetching attempts:', e);
             alert('Failed to fetch attempts.');
@@ -290,63 +369,29 @@ export default function TeacherPage() {
     };
 
     const toggleExpandAttempt = async (attemptId: string) => {
-        if (expandedAttemptId === attemptId) {
-            setExpandedAttemptId(null);
-            return;
-        }
-
+        if (expandedAttemptId === attemptId) { setExpandedAttemptId(null); return; }
         setExpandedAttemptId(attemptId);
-        console.log('Fetching details for attempt:', attemptId);
-        // Fetch details for this attempt
         try {
             const { data, error } = await supabase
                 .from('attempt_answers')
-                .select(`
-                    is_correct,
-                    selected_choice,
-                    questions (
-                        question,
-                        choices,
-                        correct_index
-                    )
-                `)
+                .select(`is_correct, selected_choice, questions (question, choices, correct_index)`)
                 .eq('attempt_id', attemptId);
-
-            if (error) {
-                console.error('Supabase error fetching answers:', error);
-                alert(`Error fetching attempt details: ${error.message} (Code: ${error.code})`);
-                throw error;
-            }
-            if (data) {
-                console.log('Fetched answer details:', data);
-                setExpandedAttemptDetails(data);
-            }
+            if (error) { alert(`Error: ${error.message}`); throw error; }
+            if (data) setExpandedAttemptDetails(data);
         } catch (e: any) {
             console.error('Failed to fetch answer details:', e);
-            alert(`Failed setting details: ${e.message}`);
         }
     };
 
-
     const handleCreateClass = async () => {
-        if (!className.trim()) {
-            alert('Please enter a class name.');
-            return;
-        }
-
+        if (!className.trim()) { alert('Please enter a class name.'); return; }
         try {
             const { data, error } = await supabase
                 .from('classes')
                 .insert({ title: className.trim() })
                 .select('id')
                 .single();
-
-            if (error) {
-                console.error('Supabase error creating class:', error);
-                alert(`Failed to create class:\n${error.message}\n\nCode: ${error.code}`);
-                return;
-            }
-
+            if (error) { alert(`Failed to create class:\n${error.message}`); return; }
             if (data) {
                 const id = data.id;
                 setActiveClassId(id);
@@ -354,16 +399,13 @@ export default function TeacherPage() {
                 setInviteLink(`${window.location.origin}/c/${id}`);
                 setClassStatus(`Active class: ${className.trim()}`);
                 setClassName('');
-                alert(`Class "${className.trim()}" created! ✅`);
-
-                // Refresh stats
+                alert(`Class "${className.trim()}" created!`);
                 setStudentCount(0);
                 setAttemptsCount(0);
                 setReviewLessons([]);
                 setReviewAttempts([]);
             }
         } catch (err: any) {
-            console.error('Unexpected error creating class:', err);
             alert(`Unexpected error: ${err.message}`);
         }
     };
@@ -390,84 +432,45 @@ export default function TeacherPage() {
 
     const handleAddLesson = async () => {
         if (!title || !content) return;
-
         setSaveStatus('Saving...');
-
-        // 1. Save Local (MVP Requirement: Keep existing behavior)
         const newLesson: Lesson = {
-            id: crypto.randomUUID(),
-            title,
-            content,
-            subject: 'General',
-            grade: 1,
-            quizzes: [],
-            questions,
-            createdAt: Date.now(),
+            id: crypto.randomUUID(), title, content, subject: 'General', grade: 1,
+            quizzes: [], questions, createdAt: Date.now(),
         };
-
         const updatedLessons = [...lessons, newLesson];
         setLessons(updatedLessons);
         await saveLessons(updatedLessons);
 
-        // 2. Sync to Supabase if Class is Active
         if (activeClassId) {
             try {
-                // Insert Lesson
-                const { data: lessonData, error: lessonError } = await supabase
+                const { error: lessonError } = await supabase
                     .from('lessons')
-                    .insert({
-                        id: newLesson.id, // Keep ID consistent
-                        class_id: activeClassId,
-                        title: newLesson.title,
-                        content: newLesson.content,
-                        created_at: new Date(newLesson.createdAt).toISOString()
-                    })
-                    .select('id')
-                    .single();
-
+                    .insert({ id: newLesson.id, class_id: activeClassId, title: newLesson.title, content: newLesson.content, created_at: new Date(newLesson.createdAt).toISOString() })
+                    .select('id').single();
                 if (lessonError) throw lessonError;
-
-                // Insert Questions
                 if (questions.length > 0) {
-                    const questionsToInsert = questions.map(q => ({
-                        lesson_id: newLesson.id,
-                        question: q.text,
-                        choices: q.choices,
-                        correct_index: q.correctIndex
-                    }));
-
                     const { error: qError } = await supabase
                         .from('questions')
-                        .insert(questionsToInsert);
-
+                        .insert(questions.map(q => ({ lesson_id: newLesson.id, question: q.text, choices: q.choices, correct_index: q.correctIndex })));
                     if (qError) throw qError;
                 }
-
-                setSaveStatus('Saved to cloud ✅');
+                setSaveStatus('Saved to cloud');
                 setTimeout(() => setSaveStatus(''), 3000);
-
-                // Refresh review list
                 fetchReviewLessons(activeClassId);
-
             } catch (err) {
                 console.error('Failed to sync to Supabase:', err);
-                setSaveStatus('Saved locally (Cloud sync failed) ⚠️');
+                setSaveStatus('Saved locally (cloud sync failed)');
             }
         } else {
-            setSaveStatus('Saved locally ✅');
+            setSaveStatus('Saved locally');
             setTimeout(() => setSaveStatus(''), 3000);
         }
-
-        // Reset form
-        setTitle('');
-        setContent('');
-        setQuestions([]);
+        setTitle(''); setContent(''); setQuestions([]);
     };
 
     const handleResetData = async () => {
         if (window.confirm('Are you sure you want to delete ALL lessons and quiz attempts? This cannot be undone.')) {
-            await clearData();
-            refreshData();
+            await clearData(); refreshData();
         }
     };
 
@@ -475,33 +478,24 @@ export default function TeacherPage() {
         const jsonString = await exportData();
         const blob = new Blob([jsonString], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
-
         const a = document.createElement('a');
         a.href = url;
         a.download = `edtech_backup_${new Date().toISOString().slice(0, 10)}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
         URL.revokeObjectURL(url);
     };
 
     const handleImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-
         const reader = new FileReader();
         reader.onload = async (event) => {
             const result = event.target?.result as string;
             if (result) {
                 const success = await importData(result);
-                if (success) {
-                    alert('Data imported successfully!');
-                    refreshData();
-                } else {
-                    alert('Failed to import data. Please check the file format.');
-                }
+                if (success) { alert('Data imported successfully!'); refreshData(); }
+                else { alert('Failed to import data. Please check the file format.'); }
             }
-            // Reset input
             if (fileInputRef.current) fileInputRef.current.value = '';
         };
         reader.readAsText(file);
@@ -510,704 +504,609 @@ export default function TeacherPage() {
     const handleCleanup = async () => {
         if (!confirm('This will remove duplicate lessons by title. Continue?')) return;
         setCleaning(true);
-        try {
-            await deDuplicateLessons();
-            await refreshData();
-            alert('Cleanup complete!');
-        } catch (e) {
-            console.error(e);
-            alert('Cleanup failed');
-        } finally {
-            setCleaning(false);
-        }
+        try { await deDuplicateLessons(); await refreshData(); alert('Cleanup complete!'); }
+        catch (e) { console.error(e); alert('Cleanup failed'); }
+        finally { setCleaning(false); }
     };
 
     const handleMigrate = async () => {
         if (!window.confirm('This will upload all local lessons to Supabase. Continue?')) return;
-
         setMigrating(true);
         const result = await migrateToCloud();
         setMigrating(false);
         alert(result.message);
     };
 
-    // Helper to get local stats (sync processing of loaded data)
     const getLessonStats = (lesson: Lesson) => {
         if (!lesson.questions || lesson.questions.length === 0) return null;
-
         const attempts = allAttempts.filter(a => a.lessonId === lesson.id);
         if (attempts.length === 0) return { count: 0, avgScore: 0, attempts: [], topMissed: [] };
-
         const totalScorePercent = attempts.reduce((sum, a) => {
             const qCount = lesson.questions!.length;
             if (qCount === 0) return sum;
-            const percentage = (a.score / qCount) * 100;
-            return sum + percentage;
+            return sum + (a.score / qCount) * 100;
         }, 0);
-
         const avg = Math.round(totalScorePercent / attempts.length);
-
-        // Calculate missed questions
-        // allAttempts.answers is Record<string, string> now in storage.ts
-        // BUT for local mode, older data might still have issues? 
-        // We normalized it in storage.ts `loadAllAttempts`.
-        // So we can assume `Record<string, string>` where key is index.
         const questionStats = lesson.questions.map((q, idx) => {
             const incorrectCount = attempts.filter(a => {
-                // answers is Record<string, string>
                 const ansStr = a.answers[String(idx)];
-                // If ansStr is present, parse it.
-                // If it's missing (undefined), it's incorrect (implicit).
-                // Or undefined means not answered?
                 const val = ansStr ? parseInt(ansStr, 10) : -1;
                 return val !== q.correctIndex;
             }).length;
             const rate = Math.round((incorrectCount / attempts.length) * 100);
             return { question: q, incorrectCount, rate };
         });
-
-        // Sort by incorrect count desc
-        const topMissed = questionStats
-            .sort((a, b) => b.incorrectCount - a.incorrectCount)
-            .filter(s => s.incorrectCount > 0)
-            .slice(0, 3);
-
+        const topMissed = questionStats.sort((a, b) => b.incorrectCount - a.incorrectCount).filter(s => s.incorrectCount > 0).slice(0, 3);
         return { count: attempts.length, avgScore: avg, attempts, topMissed };
     };
 
+    /* ════════════════════════════════════════════════════════
+       RENDER
+    ════════════════════════════════════════════════════════ */
+
     return (
-        <div style={{ padding: '20px', fontFamily: 'sans-serif', maxWidth: '800px', margin: '0 auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
-                <div>
-                    <h1 style={{ margin: 0 }}>Teacher Portal</h1>
-                    <div style={{ fontSize: '10px', color: '#888', marginTop: '4px' }}>
-                        Mode: {process.env.NEXT_PUBLIC_STORAGE_MODE || 'local'} |
-                        Key: {process.env.NEXT_PUBLIC_DEMO_KEY ? process.env.NEXT_PUBLIC_DEMO_KEY.slice(0, 4) + '***' : 'None'}
+        <div style={{ backgroundColor: '#f8fafc', minHeight: '100vh', paddingTop: 80 }}>
+            <div style={{ maxWidth: 960, margin: '0 auto', padding: '32px 24px 64px' }}>
+
+                {/* ─── Page Header ─── */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32, flexWrap: 'wrap', gap: 16 }}>
+                    <div>
+                        <h1 style={{ fontSize: 28, fontWeight: 800, color: '#0f172a', margin: '0 0 6px', letterSpacing: -0.5 }}>
+                            Teacher Portal
+                        </h1>
+                        <p style={{ fontSize: 15, color: '#64748b', margin: 0 }}>
+                            Manage your classes, lessons, and track student progress.
+                        </p>
                     </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <a
-                        href="/teacher/studio"
-                        style={{
-                            padding: '10px 20px',
-                            fontSize: '14px',
-                            backgroundColor: '#673ab7',
-                            color: 'white',
-                            textDecoration: 'none',
-                            borderRadius: '6px',
-                            fontWeight: 'bold',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            boxShadow: '0 2px 8px rgba(103, 58, 183, 0.3)'
-                        }}
-                    >
-                        🧪 Teacher Studio
-                    </a>
-                    <button
-                        onClick={handleMigrate}
-                        disabled={migrating}
-                        style={{
-                            padding: '8px 16px',
-                            fontSize: '14px',
-                            backgroundColor: migrating ? '#ccc' : '#9c27b0',
-                            color: 'white',
-                            border: 'none',
-                            cursor: migrating ? 'wait' : 'pointer',
-                            borderRadius: '4px'
-                        }}
-                    >
-                        {migrating ? 'Migrating...' : 'Migrate to Cloud'}
-                    </button>
-                    <button
-                        onClick={handleCleanup}
-                        disabled={cleaning}
-                        style={{
-                            padding: '8px 16px',
-                            fontSize: '14px',
-                            backgroundColor: cleaning ? '#ccc' : '#ff5722',
-                            color: 'white',
-                            border: 'none',
-                            cursor: cleaning ? 'wait' : 'pointer',
-                            borderRadius: '4px'
-                        }}
-                    >
-                        {cleaning ? 'Cleaning...' : 'Cleanup Duplicates'}
-                    </button>
-
-                    <button
-                        onClick={handleExportData}
-                        style={{
-                            padding: '8px 16px',
-                            fontSize: '14px',
-                            backgroundColor: '#4caf50',
-                            color: 'white',
-                            border: 'none',
-                            cursor: 'pointer',
-                            borderRadius: '4px'
-                        }}
-                    >
-                        Export Data
-                    </button>
-
-                    <label
-                        style={{
-                            padding: '8px 16px',
-                            fontSize: '14px',
-                            backgroundColor: '#2196f3',
-                            color: 'white',
-                            cursor: 'pointer',
-                            borderRadius: '4px',
-                            display: 'inline-block'
-                        }}
-                    >
-                        Import Data
-                        <input
-                            type="file"
-                            ref={fileInputRef}
-                            onChange={handleImportFileChange}
-                            accept=".json"
-                            style={{ display: 'none' }}
-                        />
-                    </label>
-
-                    <button
-                        onClick={handleResetData}
-                        style={{
-                            padding: '8px 16px',
-                            fontSize: '14px',
-                            backgroundColor: '#d32f2f',
-                            color: 'white',
-                            border: 'none',
-                            cursor: 'pointer',
-                            borderRadius: '4px'
-                        }}
-                    >
-                        Reset
-                    </button>
-                </div>
-            </div>
-
-            {/* Class Management Section */}
-            <div style={{ marginBottom: '30px', border: '2px solid #673ab7', padding: '20px', borderRadius: '8px', backgroundColor: '#f3e5f5' }}>
-                <h2 style={{ color: '#673ab7', marginTop: 0 }}>Create Class</h2>
-
-                {classStatus && (
-                    <div style={{ marginBottom: '15px', padding: '10px', backgroundColor: '#d1c4e9', borderRadius: '4px', fontWeight: 'bold' }}>
-                        {classStatus}
-                    </div>
-                )}
-
-                <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-                    <input
-                        type="text"
-                        placeholder="Class Name (e.g. Math 101)"
-                        value={className}
-                        onChange={(e) => setClassName(e.target.value)}
-                        style={{ flex: 1, padding: '10px' }}
-                    />
-                    <button
-                        onClick={handleCreateClass}
-                        style={{ padding: '10px 20px', backgroundColor: '#673ab7', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
-                    >
-                        Create Class
-                    </button>
-                </div>
-
-                {activeClassId && (
-                    <div style={{ marginTop: '10px' }}>
-                        <div style={{ fontSize: '14px', marginBottom: '15px' }}>
-                            <p style={{ margin: '5px 0' }}><strong>Share Link:</strong> {inviteLink}</p>
-                            <button
-                                onClick={copyToClipboard}
-                                style={{ padding: '5px 10px', fontSize: '12px', cursor: 'pointer' }}
-                            >
-                                Copy Link
-                            </button>
-                        </div>
-
-                        {/* Debug Panel / Stats */}
-                        <div style={{ background: '#333', color: '#fff', padding: '10px', borderRadius: '4px', fontSize: '13px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-                                <strong style={{ color: '#ff9800' }}>Class Stats (Supabase)</strong>
-                                <button
-                                    onClick={() => {
-                                        fetchClassStats(activeClassId);
-                                        fetchReviewLessons(activeClassId);
-                                        fetchStudentProgress(activeClassId);
-                                    }}
-                                    style={{ background: 'transparent', border: '1px solid #777', color: '#fff', fontSize: '11px', cursor: 'pointer', padding: '2px 5px' }}
-                                >
-                                    {loadingStats ? '...' : 'Refresh'}
-                                </button>
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                                <div>Students joined: <strong style={{ fontSize: '16px', color: '#4caf50' }}>{studentCount}</strong></div>
-                                <div>Attempts total: <strong style={{ fontSize: '16px', color: '#2196f3' }}>{attemptsCount}</strong></div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </div>
-
-            {/* Student Progress Tracking Section */}
-            {activeClassId && (
-                <div style={{ marginBottom: '30px', border: '2px solid #ff9800', padding: '20px', borderRadius: '8px', backgroundColor: '#fff3e0' }}>
-                    <h2 style={{ color: '#e65100', marginTop: 0 }}>Student Progress & Adaptive Difficulty Tracking</h2>
-
-                    {loadingProgress ? (
-                        <p>Loading student progress...</p>
-                    ) : studentProgressData.length === 0 ? (
-                        <p style={{ fontStyle: 'italic', color: '#666' }}>No students have started any quizzes yet.</p>
-                    ) : (
-                        <div style={{ overflowX: 'auto' }}>
-                            {studentProgressData.map(student => (
-                                <div key={student.student_id} style={{ marginBottom: '25px', border: '1px solid #ffcc80', borderRadius: '8px', backgroundColor: 'white', padding: '15px' }}>
-                                    {/* Student Header */}
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', paddingBottom: '10px', borderBottom: '2px solid #ffe0b2' }}>
-                                        <div>
-                                            <h3 style={{ margin: 0, color: '#e65100', fontSize: '18px' }}>{student.student_name}</h3>
-                                            <div style={{ fontSize: '13px', color: '#666', marginTop: '4px' }}>
-                                                Level {student.level} • {student.total_quizzes} quizzes completed
-                                            </div>
-                                        </div>
-                                        <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-                                            <div style={{ textAlign: 'center' }}>
-                                                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ff9800' }}>{student.total_points}</div>
-                                                <div style={{ fontSize: '11px', color: '#666' }}>Total Points</div>
-                                            </div>
-                                            <div style={{ textAlign: 'center' }}>
-                                                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#f44336' }}>🔥 {student.current_streak}</div>
-                                                <div style={{ fontSize: '11px', color: '#666' }}>Day Streak</div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Lessons Progress */}
-                                    {student.lessons_progress.length === 0 ? (
-                                        <p style={{ fontStyle: 'italic', color: '#999', margin: '10px 0' }}>No lesson progress yet</p>
-                                    ) : (
-                                        <div style={{ display: 'grid', gap: '10px' }}>
-                                            {student.lessons_progress.map((lp: any) => (
-                                                <div key={lp.lesson_id} style={{ border: '1px solid #ffe0b2', borderRadius: '4px', padding: '12px', backgroundColor: '#fffaf5' }}>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                                                        <div style={{ fontWeight: 'bold', color: '#333', fontSize: '15px' }}>{lp.lesson_title}</div>
-                                                        <div style={{
-                                                            padding: '4px 12px',
-                                                            borderRadius: '12px',
-                                                            fontSize: '12px',
-                                                            fontWeight: 'bold',
-                                                            backgroundColor: lp.current_difficulty === 'easy' ? '#d4edda' : lp.current_difficulty === 'medium' ? '#fff3cd' : '#f8d7da',
-                                                            color: lp.current_difficulty === 'easy' ? '#155724' : lp.current_difficulty === 'medium' ? '#856404' : '#721c24',
-                                                            border: `2px solid ${lp.current_difficulty === 'easy' ? '#28a745' : lp.current_difficulty === 'medium' ? '#ffc107' : '#dc3545'}`
-                                                        }}>
-                                                            Current: {lp.current_difficulty === 'easy' ? '⭐ Easy' : lp.current_difficulty === 'medium' ? '⭐⭐ Medium' : '⭐⭐⭐ Hard'}
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Difficulty Progress Grid */}
-                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                                                        {/* Easy */}
-                                                        <div style={{
-                                                            padding: '8px',
-                                                            borderRadius: '4px',
-                                                            backgroundColor: lp.easy_mastered ? '#d4edda' : '#f8f9fa',
-                                                            border: `1px solid ${lp.easy_mastered ? '#28a745' : '#dee2e6'}`
-                                                        }}>
-                                                            <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#155724', marginBottom: '4px' }}>
-                                                                ⭐ Easy {lp.easy_mastered && '✓'}
-                                                            </div>
-                                                            <div style={{ fontSize: '11px', color: '#666' }}>
-                                                                {lp.easy_accuracy}% accuracy
-                                                            </div>
-                                                            <div style={{ fontSize: '10px', color: lp.easy_mastered ? '#28a745' : '#999', fontWeight: lp.easy_mastered ? 'bold' : 'normal' }}>
-                                                                {lp.easy_mastered ? 'Mastered!' : 'In Progress'}
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Medium */}
-                                                        <div style={{
-                                                            padding: '8px',
-                                                            borderRadius: '4px',
-                                                            backgroundColor: lp.medium_mastered ? '#fff3cd' : '#f8f9fa',
-                                                            border: `1px solid ${lp.medium_mastered ? '#ffc107' : '#dee2e6'}`
-                                                        }}>
-                                                            <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#856404', marginBottom: '4px' }}>
-                                                                ⭐⭐ Medium {lp.medium_mastered && '✓'}
-                                                            </div>
-                                                            <div style={{ fontSize: '11px', color: '#666' }}>
-                                                                {lp.medium_accuracy}% accuracy
-                                                            </div>
-                                                            <div style={{ fontSize: '10px', color: lp.medium_mastered ? '#ff9800' : '#999', fontWeight: lp.medium_mastered ? 'bold' : 'normal' }}>
-                                                                {lp.medium_mastered ? 'Mastered!' : lp.easy_mastered ? 'In Progress' : 'Locked'}
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Hard */}
-                                                        <div style={{
-                                                            padding: '8px',
-                                                            borderRadius: '4px',
-                                                            backgroundColor: lp.hard_mastered ? '#f8d7da' : '#f8f9fa',
-                                                            border: `1px solid ${lp.hard_mastered ? '#dc3545' : '#dee2e6'}`
-                                                        }}>
-                                                            <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#721c24', marginBottom: '4px' }}>
-                                                                ⭐⭐⭐ Hard {lp.hard_mastered && '✓'}
-                                                            </div>
-                                                            <div style={{ fontSize: '11px', color: '#666' }}>
-                                                                {lp.hard_accuracy}% accuracy
-                                                            </div>
-                                                            <div style={{ fontSize: '10px', color: lp.hard_mastered ? '#dc3545' : '#999', fontWeight: lp.hard_mastered ? 'bold' : 'normal' }}>
-                                                                {lp.hard_mastered ? 'Mastered!' : lp.medium_mastered ? 'In Progress' : 'Locked'}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* Attempt Review Section */}
-            {activeClassId && (
-                <div style={{ marginBottom: '30px', border: '2px solid #009688', padding: '20px', borderRadius: '8px', backgroundColor: '#e0f2f1' }}>
-                    <h2 style={{ color: '#00796b', marginTop: 0 }}>Attempt Review</h2>
-
-                    <div style={{ marginBottom: '15px' }}>
-                        <label style={{ marginRight: '10px', fontWeight: 'bold' }}>Select Lesson:</label>
-                        <select
-                            value={selectedReviewLessonId}
-                            onChange={(e) => handleSelectReviewLesson(e.target.value)}
-                            style={{ padding: '8px', borderRadius: '4px', borderColor: '#ccc' }}
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <Link
+                            href="/teacher/studio"
+                            style={{
+                                ...S.btnPrimary,
+                                textDecoration: 'none',
+                                backgroundColor: '#7c3aed',
+                            }}
                         >
-                            <option value="">-- Choose a lesson --</option>
-                            {reviewLessons.map(l => (
-                                <option key={l.id} value={l.id}>{l.title}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {selectedReviewLessonId && (
-                        <div>
-                            {loadingReview ? (
-                                <p>Loading attempts...</p>
-                            ) : reviewAttempts.length === 0 ? (
-                                <p style={{ fontStyle: 'italic', color: '#666' }}>No attempts yet for this lesson.</p>
-                            ) : (
-                                <div>
-                                    <p><strong>Total Attempts:</strong> {reviewAttempts.length}</p>
-                                    <div style={{ display: 'grid', gap: '10px' }}>
-                                        {reviewAttempts.map(attempt => {
-                                            const isExpanded = expandedAttemptId === attempt.id;
-                                            const studentName = attempt.students?.display_name || 'Unknown Student';
-                                            const lesson = reviewLessons.find(l => l.id === selectedReviewLessonId);
-
-                                            return (
-                                                <div key={attempt.id} style={{ border: '1px solid #b2dfdb', borderRadius: '4px', backgroundColor: 'white' }}>
-                                                    <div
-                                                        onClick={() => toggleExpandAttempt(attempt.id)}
-                                                        style={{
-                                                            padding: '10px',
-                                                            cursor: 'pointer',
-                                                            display: 'flex',
-                                                            justifyContent: 'space-between',
-                                                            alignItems: 'center',
-                                                            backgroundColor: isExpanded ? '#b2dfdb' : 'transparent',
-                                                            fontWeight: isExpanded ? 'bold' : 'normal'
-                                                        }}
-                                                    >
-                                                        <span>
-                                                            <strong>{studentName}</strong>
-                                                            <span style={{ margin: '0 10px', color: '#666' }}>|</span>
-                                                            Score: {(() => {
-                                                                const qCount = lesson?.questions.length || 0;
-                                                                if (qCount === 0) return '0';
-                                                                return Math.round((attempt.score / qCount) * 100);
-                                                            })()}%
-                                                        </span>
-                                                        <span style={{ fontSize: '12px', color: '#777' }}>
-                                                            {new Date(attempt.created_at).toLocaleString()} {isExpanded ? '▲' : '▼'}
-                                                        </span>
-                                                    </div>
-
-                                                    {isExpanded && (
-                                                        <div style={{ padding: '15px', borderTop: '1px solid #eee' }}>
-                                                            {expandedAttemptDetails.length === 0 ? (
-                                                                <div style={{ padding: '10px', color: '#666', fontStyle: 'italic', textAlign: 'center' }}>
-                                                                    No individual answer data found for this attempt.<br /> (This attempt was likely completed before granular tracking was added).<br /><br /><b>Please complete a NEW quiz attempt in the Student Portal to see this feature in action.</b>
-                                                                </div>
-                                                            ) : (
-                                                                expandedAttemptDetails.map((detail, idx) => {
-                                                                    const q = detail.questions;
-                                                                    const qText = q?.question || 'Question deleted (?)';
-                                                                    const isCorrect = detail.is_correct;
-                                                                    const correctChoice = q?.choices?.[q?.correct_index] || 'Unknown';
-                                                                    const selectedText = detail.selected_choice || '(Unanswered)';
-
-                                                                    return (
-                                                                        <div key={idx} style={{ marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px dotted #ccc' }}>
-                                                                            <div style={{ marginBottom: '4px', fontWeight: 600 }}>Q{idx + 1}: {qText}</div>
-                                                                            <div style={{ fontSize: '14px' }}>
-                                                                                <span style={{
-                                                                                    color: isCorrect ? 'green' : (detail.selected_choice === null ? 'orange' : 'red'),
-                                                                                    fontWeight: 'bold',
-                                                                                    marginRight: '10px'
-                                                                                }}>
-                                                                                    {isCorrect ? '✅ Correct' : (detail.selected_choice === null ? '⚠️ Unanswered' : '❌ Wrong')}
-                                                                                </span>
-                                                                                {!isCorrect && <span style={{ color: '#555' }}>You chose: {selectedText}</span>}
-                                                                                {isCorrect && <span style={{ color: '#555' }}>Answer: {selectedText}</span>}
-                                                                            </div>
-                                                                            {!isCorrect && (
-                                                                                <div style={{ fontSize: '13px', color: 'green', marginTop: '2px' }}>
-                                                                                    Correct Answer: {correctChoice}
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                    );
-                                                                })
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18"/><path d="M5 12h14"/></svg>
+                            AI Lesson Studio
+                        </Link>
+                        <div style={{ position: 'relative' }}>
+                            <button onClick={() => setShowTools(!showTools)} style={{ ...S.btnSecondary }}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+                                Tools
+                            </button>
+                            {showTools && (
+                                <div style={{
+                                    position: 'absolute', right: 0, top: '100%', marginTop: 6, zIndex: 50,
+                                    backgroundColor: '#fff', border: '1px solid #e8ecf0', borderRadius: 12,
+                                    boxShadow: '0 8px 24px rgba(0,0,0,0.08)', padding: 8, minWidth: 200,
+                                }}>
+                                    <ToolBtn label={migrating ? 'Migrating...' : 'Migrate to Cloud'} onClick={handleMigrate} disabled={migrating} />
+                                    <ToolBtn label={cleaning ? 'Cleaning...' : 'Cleanup Duplicates'} onClick={handleCleanup} disabled={cleaning} />
+                                    <ToolBtn label="Export Data" onClick={handleExportData} />
+                                    <label style={{ display: 'block', padding: '8px 12px', fontSize: 13, color: '#374151', cursor: 'pointer', borderRadius: 8 }}>
+                                        Import Data
+                                        <input type="file" ref={fileInputRef} onChange={handleImportFileChange} accept=".json" style={{ display: 'none' }} />
+                                    </label>
+                                    <div style={{ height: 1, backgroundColor: '#f1f5f9', margin: '4px 0' }} />
+                                    <ToolBtn label="Reset All Data" onClick={handleResetData} danger />
                                 </div>
                             )}
                         </div>
-                    )}
-                </div>
-            )}
-
-            <div style={{ marginBottom: '30px', border: '1px solid #ccc', padding: '20px', borderRadius: '8px' }}>
-                <h2>1. Lesson Details</h2>
-                {/* ... (Existing Create Lesson UI) */}
-                <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Title:</label>
-                    <input
-                        type="text"
-                        value={title}
-                        onChange={(e) => setTitle(e.target.value)}
-                        style={{ width: '100%', padding: '8px', fontSize: '16px' }}
-                        placeholder="e.g. Introduction to Algebra"
-                    />
-                </div>
-
-                <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Content:</label>
-                    <textarea
-                        value={content}
-                        onChange={(e) => setContent(e.target.value)}
-                        style={{ width: '100%', height: '120px', padding: '8px', fontSize: '16px' }}
-                        placeholder="Write your lesson content here..."
-                    />
-                </div>
-
-                <hr style={{ margin: '20px 0' }} />
-
-                <h2>2. Add Quiz Questions (Optional)</h2>
-                <div style={{ backgroundColor: '#f9f9f9', padding: '15px', borderRadius: '5px' }}>
-                    <div style={{ marginBottom: '10px' }}>
-                        <label style={{ display: 'block', marginBottom: '5px' }}>Question Text:</label>
-                        <input
-                            type="text"
-                            value={qText}
-                            onChange={(e) => setQText(e.target.value)}
-                            style={{ width: '100%', padding: '8px' }}
-                        />
                     </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
-                        {choices.map((choice, idx) => (
-                            <div key={idx}>
-                                <label style={{ display: 'block', fontSize: '14px' }}>Choice {idx + 1}:</label>
-                                <input
-                                    type="text"
-                                    value={choice}
-                                    onChange={(e) => handleChoiceChange(idx, e.target.value)}
-                                    style={{ width: '100%', padding: '6px' }}
-                                />
-                            </div>
-                        ))}
-                    </div>
-
-                    <div style={{ marginBottom: '15px' }}>
-                        <label style={{ marginRight: '10px' }}>Correct Answer:</label>
-                        <select
-                            value={correctIndex}
-                            onChange={(e) => setCorrectIndex(Number(e.target.value))}
-                            style={{ padding: '6px' }}
-                        >
-                            {[0, 1, 2, 3].map(i => (
-                                <option key={i} value={i}>Choice {i + 1}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <button
-                        onClick={addQuestion}
-                        style={{ padding: '8px 16px', backgroundColor: '#333', color: 'white', border: 'none', cursor: 'pointer' }}
-                    >
-                        Add Question to Quiz
-                    </button>
                 </div>
 
-                {questions.length > 0 && (
-                    <div style={{ marginTop: '15px' }}>
-                        <h3>Questions Added ({questions.length}):</h3>
-                        <ul style={{ paddingLeft: '20px' }}>
-                            {questions.map((q, i) => (
-                                <li key={i}>{q.text} (Correct: Choice {q.correctIndex + 1})</li>
-                            ))}
-                        </ul>
+                {/* ─── Class Management ─── */}
+                <section style={{ ...S.card, marginBottom: 24 }}>
+                    <div style={S.cardHeader}>
+                        <div style={{ ...S.sectionTag, backgroundColor: '#f0f5ff', color: '#1a56db' }}>Class Management</div>
+                        <h2 style={S.sectionTitle}>Your Classroom</h2>
+                        <p style={S.sectionDesc}>Create a class and share the invite link with your students.</p>
                     </div>
-                )}
-
-                <div style={{ marginTop: '30px', textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '10px' }}>
-                    {saveStatus && <span style={{ fontWeight: 'bold', color: saveStatus.includes('failed') ? 'red' : 'green' }}>{saveStatus}</span>}
-                    <button
-                        onClick={handleAddLesson}
-                        style={{
-                            padding: '12px 24px',
-                            fontSize: '18px',
-                            backgroundColor: '#0070f3',
-                            color: 'white',
-                            border: 'none',
-                            cursor: 'pointer',
-                            borderRadius: '5px'
-                        }}
-                    >
-                        Create Lesson with Quiz
-                    </button>
-                </div>
-            </div>
-
-            <h2>Existing Lessons</h2>
-            {lessons.length === 0 ? (
-                <p>No lessons created yet.</p>
-            ) : (
-                <div style={{ display: 'grid', gap: '20px' }}>
-                    {lessons.map((lesson) => {
-                        const stats = getLessonStats(lesson);
-                        const isExpanded = true; // For teacher dashboard, we can keep them mostly visible or add toggles if needed, but let's follow the student layout style
-
-                        return (
-                            <div key={lesson.id} style={{
-                                border: '1px solid #ddd',
-                                borderRadius: '12px',
-                                backgroundColor: 'white',
-                                boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-                                overflow: 'hidden'
+                    <div style={S.cardBody}>
+                        {classStatus && (
+                            <div style={{
+                                display: 'flex', alignItems: 'center', gap: 10,
+                                padding: '12px 16px', backgroundColor: '#f0f9ff', border: '1px solid #bae6fd',
+                                borderRadius: 10, marginBottom: 20, fontSize: 14, color: '#0369a1', fontWeight: 500,
                             }}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                                {classStatus}
+                            </div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+                            <input
+                                type="text"
+                                placeholder="Class name (e.g. Math 101)"
+                                value={className}
+                                onChange={(e) => setClassName(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleCreateClass()}
+                                style={{ ...S.input, flex: 1 }}
+                            />
+                            <button onClick={handleCreateClass} style={S.btnPrimary}>Create Class</button>
+                        </div>
+
+                        {activeClassId && (
+                            <>
+                                {/* Invite link */}
                                 <div style={{
-                                    padding: '20px',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'flex-start',
-                                    backgroundColor: '#f8fafc',
-                                    borderBottom: '1px solid #e2e8f0'
+                                    display: 'flex', alignItems: 'center', gap: 10,
+                                    padding: '10px 14px', backgroundColor: '#fafbfd', border: '1px solid #e8ecf0',
+                                    borderRadius: 10, marginBottom: 20, fontSize: 13,
                                 }}>
-                                    <div>
-                                        <h3 style={{ margin: '0 0 5px 0', fontSize: '18px', color: '#1e293b' }}>{lesson.title}</h3>
-                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                            <span style={{ fontSize: '12px', color: '#64748b', backgroundColor: '#f1f5f9', padding: '2px 8px', borderRadius: '10px' }}>
-                                                {lesson.questions?.length || 0} Questions
-                                            </span>
-                                            <span style={{ fontSize: '12px', color: '#3b82f6', backgroundColor: '#eff6ff', padding: '2px 8px', borderRadius: '10px' }}>
-                                                Grade {lesson.grade || 6}
-                                            </span>
-                                        </div>
+                                    <span style={{ color: '#64748b', fontWeight: 500, whiteSpace: 'nowrap' }}>Share link:</span>
+                                    <code style={{ flex: 1, color: '#1a56db', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {inviteLink}
+                                    </code>
+                                    <button onClick={copyToClipboard} style={{ ...S.btnSecondary, padding: '6px 12px', fontSize: 12 }}>
+                                        Copy
+                                    </button>
+                                </div>
+
+                                {/* Stats row */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                                    <StatCard label="Students" value={studentCount} color="#1a56db" />
+                                    <StatCard label="Attempts" value={attemptsCount} color="#059669" />
+                                    <div style={{
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        backgroundColor: '#fafbfd', border: '1px solid #e8ecf0', borderRadius: 10, padding: 12,
+                                    }}>
+                                        <button
+                                            onClick={() => { fetchClassStats(activeClassId); fetchReviewLessons(activeClassId); fetchStudentProgress(activeClassId); }}
+                                            style={{ ...S.btnSecondary, border: 'none', backgroundColor: 'transparent', fontSize: 13, color: '#64748b' }}
+                                        >
+                                            {loadingStats ? 'Loading...' : 'Refresh Stats'}
+                                        </button>
                                     </div>
-                                    <div style={{ textAlign: 'right' }}>
-                                        {stats && stats.count > 0 ? (
-                                            <div style={{ display: 'flex', gap: '15px', fontSize: '14px' }}>
-                                                <div style={{ color: '#64748b' }}>
-                                                    <span style={{ fontWeight: 'bold', color: '#2563eb' }}>{stats.count}</span> Attempts
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </section>
+
+                {/* ─── Student Progress ─── */}
+                {activeClassId && (
+                    <section style={{ ...S.card, marginBottom: 24 }}>
+                        <div style={S.cardHeader}>
+                            <div style={{ ...S.sectionTag, backgroundColor: '#fef3c7', color: '#92400e' }}>Student Progress</div>
+                            <h2 style={S.sectionTitle}>Adaptive Difficulty Tracking</h2>
+                            <p style={S.sectionDesc}>Monitor each student&apos;s mastery progression across difficulty levels.</p>
+                        </div>
+                        <div style={S.cardBody}>
+                            {loadingProgress ? (
+                                <p style={{ color: '#64748b', fontSize: 14 }}>Loading student progress...</p>
+                            ) : studentProgressData.length === 0 ? (
+                                <div style={S.emptyState}>No students have started any quizzes yet.</div>
+                            ) : (
+                                <div style={{ display: 'grid', gap: 16 }}>
+                                    {studentProgressData.map(student => (
+                                        <div key={student.student_id} style={{ border: '1px solid #e8ecf0', borderRadius: 12, overflow: 'hidden' }}>
+                                            {/* Student header */}
+                                            <div style={{
+                                                padding: '16px 20px', backgroundColor: '#fafbfd',
+                                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                                borderBottom: '1px solid #f1f5f9',
+                                            }}>
+                                                <div>
+                                                    <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>{student.student_name}</div>
+                                                    <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>
+                                                        Level {student.level} &middot; {student.total_quizzes} quizzes
+                                                    </div>
                                                 </div>
-                                                <div style={{ color: '#64748b' }}>
-                                                    <span style={{ fontWeight: 'bold', color: stats.avgScore >= 70 ? '#10b981' : '#f59e0b' }}>{stats.avgScore}%</span> Avg
+                                                <div style={{ display: 'flex', gap: 20 }}>
+                                                    <div style={{ textAlign: 'center' }}>
+                                                        <div style={{ fontSize: 20, fontWeight: 800, color: '#1a56db' }}>{student.total_points}</div>
+                                                        <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 500 }}>Points</div>
+                                                    </div>
+                                                    <div style={{ textAlign: 'center' }}>
+                                                        <div style={{ fontSize: 20, fontWeight: 800, color: '#ea580c' }}>{student.current_streak}</div>
+                                                        <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 500 }}>Streak</div>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        ) : (
-                                            <span style={{ fontSize: '13px', color: '#94a3b8', fontStyle: 'italic' }}>No attempts yet</span>
-                                        )}
-                                    </div>
+
+                                            {/* Lessons progress */}
+                                            <div style={{ padding: '16px 20px' }}>
+                                                {student.lessons_progress.length === 0 ? (
+                                                    <p style={{ fontSize: 13, color: '#94a3b8', margin: 0 }}>No lesson progress yet</p>
+                                                ) : (
+                                                    <div style={{ display: 'grid', gap: 12 }}>
+                                                        {student.lessons_progress.map((lp: any) => (
+                                                            <div key={lp.lesson_id} style={{ padding: 14, backgroundColor: '#fafbfd', borderRadius: 10, border: '1px solid #f1f5f9' }}>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                                                    <span style={{ fontWeight: 600, fontSize: 14, color: '#1e293b' }}>{lp.lesson_title}</span>
+                                                                    <span style={S.badge(
+                                                                        lp.current_difficulty === 'easy' ? '#dcfce7' : lp.current_difficulty === 'medium' ? '#fef9c3' : '#fce7f3',
+                                                                        lp.current_difficulty === 'easy' ? '#166534' : lp.current_difficulty === 'medium' ? '#854d0e' : '#9f1239',
+                                                                    )}>
+                                                                        {lp.current_difficulty === 'easy' ? 'Easy' : lp.current_difficulty === 'medium' ? 'Medium' : 'Hard'}
+                                                                    </span>
+                                                                </div>
+                                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                                                                    <DifficultyCell level="Easy" mastered={lp.easy_mastered} accuracy={lp.easy_accuracy} unlocked={true} />
+                                                                    <DifficultyCell level="Medium" mastered={lp.medium_mastered} accuracy={lp.medium_accuracy} unlocked={lp.easy_mastered} />
+                                                                    <DifficultyCell level="Hard" mastered={lp.hard_mastered} accuracy={lp.hard_accuracy} unlocked={lp.medium_mastered} />
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
+                            )}
+                        </div>
+                    </section>
+                )}
 
-                                {/* Bento Preview - Same as Student Page */}
-                                <div style={{
-                                    padding: '20px',
-                                    background: '#f8fafc',
-                                    display: 'grid',
-                                    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-                                    gap: '15px'
-                                }}>
-                                    {/* Podcast Segment */}
-                                    <div style={{
-                                        background: 'white',
-                                        padding: '15px',
-                                        borderRadius: '10px',
-                                        border: '1px solid #e2e8f0',
-                                        fontSize: '13px'
-                                    }}>
-                                        <h4 style={{ margin: '0 0 10px 0', fontSize: '14px' }}>🎙️ بودكاست</h4>
-                                        <div style={{ color: '#64748b', fontStyle: 'italic', marginBottom: '8px' }}>Preview Script:</div>
-                                        <div style={{ color: '#475569', maxHeight: '80px', overflowY: 'auto', dir: 'rtl', textAlign: 'right' }}>
-                                            {lesson.podcast_script || "No script generated."}
-                                        </div>
-                                    </div>
+                {/* ─── Attempt Review ─── */}
+                {activeClassId && (
+                    <section style={{ ...S.card, marginBottom: 24 }}>
+                        <div style={S.cardHeader}>
+                            <div style={{ ...S.sectionTag, backgroundColor: '#ecfdf5', color: '#065f46' }}>Analytics</div>
+                            <h2 style={S.sectionTitle}>Attempt Review</h2>
+                            <p style={S.sectionDesc}>Drill into individual quiz attempts and see per-question breakdowns.</p>
+                        </div>
+                        <div style={S.cardBody}>
+                            <div style={{ marginBottom: 20 }}>
+                                <label style={S.label}>Select a lesson</label>
+                                <select
+                                    value={selectedReviewLessonId}
+                                    onChange={(e) => handleSelectReviewLesson(e.target.value)}
+                                    style={{ ...S.input, cursor: 'pointer' }}
+                                >
+                                    <option value="">Choose a lesson...</option>
+                                    {reviewLessons.map(l => (
+                                        <option key={l.id} value={l.id}>{l.title}</option>
+                                    ))}
+                                </select>
+                            </div>
 
-                                    {/* Reader Segment */}
-                                    <div style={{
-                                        background: 'white',
-                                        padding: '15px',
-                                        borderRadius: '10px',
-                                        border: '1px solid #e2e8f0',
-                                        fontSize: '13px',
-                                        dir: 'rtl'
-                                    }}>
-                                        <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', textAlign: 'right' }}>📖 ملخص الدرس</h4>
-                                        <div style={{ color: '#334155', maxHeight: '80px', overflowY: 'auto', textAlign: 'right' }}>
-                                            {lesson.simplified_arabic || lesson.content}
-                                        </div>
-                                    </div>
+                            {selectedReviewLessonId && (
+                                <>
+                                    {loadingReview ? (
+                                        <p style={{ color: '#64748b', fontSize: 14 }}>Loading attempts...</p>
+                                    ) : reviewAttempts.length === 0 ? (
+                                        <div style={S.emptyState}>No attempts yet for this lesson.</div>
+                                    ) : (
+                                        <div>
+                                            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 12 }}>
+                                                <strong style={{ color: '#1e293b' }}>{reviewAttempts.length}</strong> total attempts
+                                            </div>
+                                            <div style={{ display: 'grid', gap: 8 }}>
+                                                {reviewAttempts.map(attempt => {
+                                                    const isExpanded = expandedAttemptId === attempt.id;
+                                                    const studentName = attempt.students?.display_name || 'Unknown Student';
+                                                    const lesson = reviewLessons.find(l => l.id === selectedReviewLessonId);
+                                                    const qCount = lesson?.questions.length || 0;
+                                                    const pct = qCount > 0 ? Math.round((attempt.score / qCount) * 100) : 0;
 
-                                    {/* Quiz Segment */}
-                                    <div style={{
-                                        gridColumn: '1 / -1',
-                                        background: 'white',
-                                        padding: '15px',
-                                        borderRadius: '10px',
-                                        border: '1px solid #e2e8f0',
-                                        fontSize: '13px'
-                                    }}>
-                                        <h4 style={{ margin: '0 0 10px 0', fontSize: '14px' }}>📝 Quiz Preview</h4>
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px' }}>
-                                            {(lesson.questions || []).slice(0, 4).map((q, qIdx) => (
-                                                <div key={q.id} style={{ padding: '8px', background: '#f1f5f9', borderRadius: '6px' }}>
-                                                    <div style={{ fontWeight: 600, marginBottom: '4px', textAlign: 'right', dir: 'rtl' }}>{qIdx + 1}. {q.question?.slice(0, 40)}...</div>
-                                                    <div style={{ fontSize: '11px', color: '#16a34a', textAlign: 'right' }}>✓ {q.choices?.[q.correct_index]}</div>
-                                                </div>
-                                            ))}
+                                                    return (
+                                                        <div key={attempt.id} style={{ border: '1px solid #e8ecf0', borderRadius: 10, overflow: 'hidden' }}>
+                                                            <div
+                                                                onClick={() => toggleExpandAttempt(attempt.id)}
+                                                                style={{
+                                                                    padding: '12px 16px', cursor: 'pointer',
+                                                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                                                    backgroundColor: isExpanded ? '#f0f5ff' : '#fff',
+                                                                    transition: 'background-color 0.15s',
+                                                                }}
+                                                            >
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                                                    <div style={{
+                                                                        width: 36, height: 36, borderRadius: 8,
+                                                                        backgroundColor: pct >= 80 ? '#dcfce7' : pct >= 50 ? '#fef9c3' : '#fef2f2',
+                                                                        color: pct >= 80 ? '#166534' : pct >= 50 ? '#854d0e' : '#991b1b',
+                                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                        fontSize: 13, fontWeight: 800,
+                                                                    }}>
+                                                                        {pct}%
+                                                                    </div>
+                                                                    <div>
+                                                                        <div style={{ fontSize: 14, fontWeight: 600, color: '#1e293b' }}>{studentName}</div>
+                                                                        <div style={{ fontSize: 12, color: '#94a3b8' }}>
+                                                                            {new Date(attempt.created_at).toLocaleString()}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2"
+                                                                    style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+                                                                    <polyline points="6 9 12 15 18 9" />
+                                                                </svg>
+                                                            </div>
+
+                                                            {isExpanded && (
+                                                                <div style={{ padding: '16px 20px', borderTop: '1px solid #f1f5f9', backgroundColor: '#fafbfd' }}>
+                                                                    {expandedAttemptDetails.length === 0 ? (
+                                                                        <p style={{ fontSize: 13, color: '#94a3b8', textAlign: 'center', margin: 0 }}>
+                                                                            No granular answer data for this attempt.
+                                                                        </p>
+                                                                    ) : (
+                                                                        <div style={{ display: 'grid', gap: 10 }}>
+                                                                            {expandedAttemptDetails.map((detail, idx) => {
+                                                                                const q = detail.questions;
+                                                                                const qText = q?.question || 'Question deleted';
+                                                                                const isCorrect = detail.is_correct;
+                                                                                const correctChoice = q?.choices?.[q?.correct_index] || 'Unknown';
+                                                                                const selectedText = detail.selected_choice || '(Unanswered)';
+                                                                                return (
+                                                                                    <div key={idx} style={{
+                                                                                        padding: '10px 14px', borderRadius: 8,
+                                                                                        backgroundColor: isCorrect ? '#f0fdf4' : '#fff',
+                                                                                        border: `1px solid ${isCorrect ? '#bbf7d0' : '#fecaca'}`,
+                                                                                    }}>
+                                                                                        <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', marginBottom: 4 }}>
+                                                                                            Q{idx + 1}: {qText}
+                                                                                        </div>
+                                                                                        <div style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                                                            <span style={{
+                                                                                                fontWeight: 600, fontSize: 12,
+                                                                                                color: isCorrect ? '#166534' : detail.selected_choice === null ? '#92400e' : '#991b1b',
+                                                                                            }}>
+                                                                                                {isCorrect ? 'Correct' : detail.selected_choice === null ? 'Unanswered' : 'Wrong'}
+                                                                                            </span>
+                                                                                            <span style={{ color: '#64748b' }}>
+                                                                                                {isCorrect ? `Answer: ${selectedText}` : `Chose: ${selectedText}`}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                        {!isCorrect && (
+                                                                                            <div style={{ fontSize: 12, color: '#166534', marginTop: 4 }}>
+                                                                                                Correct: {correctChoice}
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </div>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    </section>
+                )}
+
+                {/* ─── Create Lesson ─── */}
+                <section style={{ ...S.card, marginBottom: 24 }}>
+                    <div style={S.cardHeader}>
+                        <div style={{ ...S.sectionTag, backgroundColor: '#ede9fe', color: '#5b21b6' }}>Create</div>
+                        <h2 style={S.sectionTitle}>New Lesson</h2>
+                        <p style={S.sectionDesc}>Add a lesson with optional quiz questions. For AI-generated quizzes, use the Lesson Studio.</p>
+                    </div>
+                    <div style={S.cardBody}>
+                        <div style={{ marginBottom: 16 }}>
+                            <label style={S.label}>Lesson Title</label>
+                            <input
+                                type="text"
+                                value={title}
+                                onChange={(e) => setTitle(e.target.value)}
+                                style={S.input}
+                                placeholder="e.g. Introduction to Algebra"
+                            />
+                        </div>
+                        <div style={{ marginBottom: 24 }}>
+                            <label style={S.label}>Content</label>
+                            <textarea
+                                value={content}
+                                onChange={(e) => setContent(e.target.value)}
+                                style={{ ...S.input, height: 120, resize: 'vertical' as const }}
+                                placeholder="Write your lesson content here..."
+                            />
+                        </div>
+
+                        <div style={{ height: 1, backgroundColor: '#f1f5f9', margin: '0 0 24px' }} />
+
+                        {/* Quiz builder */}
+                        <div style={{ ...S.sectionTag, backgroundColor: '#f0f5ff', color: '#1a56db', marginBottom: 16 }}>Quiz Questions (Optional)</div>
+                        <div style={{ padding: 20, backgroundColor: '#fafbfd', borderRadius: 12, border: '1px solid #e8ecf0' }}>
+                            <div style={{ marginBottom: 14 }}>
+                                <label style={S.label}>Question Text</label>
+                                <input type="text" value={qText} onChange={(e) => setQText(e.target.value)} style={S.input} placeholder="Enter your question..." />
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+                                {choices.map((choice, idx) => (
+                                    <div key={idx}>
+                                        <label style={{ ...S.label, fontSize: 12, color: '#94a3b8' }}>Choice {idx + 1}</label>
+                                        <input type="text" value={choice} onChange={(e) => handleChoiceChange(idx, e.target.value)} style={S.input} />
                                     </div>
+                                ))}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                                <label style={{ ...S.label, marginBottom: 0 }}>Correct Answer:</label>
+                                <select value={correctIndex} onChange={(e) => setCorrectIndex(Number(e.target.value))}
+                                    style={{ ...S.input, width: 'auto', cursor: 'pointer' }}>
+                                    {[0, 1, 2, 3].map(i => (
+                                        <option key={i} value={i}>Choice {i + 1}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <button onClick={addQuestion} style={S.btnSecondary}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                                Add Question
+                            </button>
+                        </div>
+
+                        {questions.length > 0 && (
+                            <div style={{ marginTop: 16 }}>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 8 }}>
+                                    {questions.length} question{questions.length > 1 ? 's' : ''} added:
+                                </div>
+                                <div style={{ display: 'grid', gap: 6 }}>
+                                    {questions.map((q, i) => (
+                                        <div key={i} style={{
+                                            display: 'flex', alignItems: 'center', gap: 10,
+                                            padding: '8px 12px', backgroundColor: '#f0f5ff', borderRadius: 8,
+                                            fontSize: 13, color: '#1e293b',
+                                        }}>
+                                            <span style={{ fontWeight: 700, color: '#1a56db', fontSize: 12, minWidth: 24 }}>Q{i + 1}</span>
+                                            {q.text}
+                                            <span style={{ marginLeft: 'auto', fontSize: 12, color: '#64748b' }}>Answer: Choice {q.correctIndex + 1}</span>
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
-                        );
-                    })}
-                </div>
-            )}
+                        )}
+
+                        <div style={{ marginTop: 24, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12 }}>
+                            {saveStatus && (
+                                <span style={{
+                                    fontSize: 13, fontWeight: 500,
+                                    color: saveStatus.includes('failed') ? '#dc2626' : '#059669',
+                                }}>
+                                    {saveStatus}
+                                </span>
+                            )}
+                            <button onClick={handleAddLesson} style={{ ...S.btnPrimary, padding: '12px 28px', fontSize: 15 }}>
+                                Create Lesson
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                {/* ─── Existing Lessons ─── */}
+                <section>
+                    <div style={{ marginBottom: 16 }}>
+                        <div style={{ ...S.sectionTag, backgroundColor: '#f1f5f9', color: '#475569' }}>Library</div>
+                        <h2 style={{ ...S.sectionTitle, marginTop: 4 }}>Existing Lessons</h2>
+                    </div>
+
+                    {lessons.length === 0 ? (
+                        <div style={{ ...S.card, ...S.emptyState }}>No lessons created yet.</div>
+                    ) : (
+                        <div style={{ display: 'grid', gap: 16 }}>
+                            {lessons.map((lesson) => {
+                                const stats = getLessonStats(lesson);
+                                return (
+                                    <div key={lesson.id} style={S.card}>
+                                        <div style={{
+                                            padding: '18px 22px',
+                                            display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+                                            backgroundColor: '#fafbfd', borderBottom: '1px solid #f1f5f9',
+                                        }}>
+                                            <div>
+                                                <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700, color: '#1e293b' }}>{lesson.title}</h3>
+                                                <div style={{ display: 'flex', gap: 6 }}>
+                                                    <span style={S.badge('#f0f5ff', '#1a56db')}>
+                                                        {lesson.questions?.length || 0} questions
+                                                    </span>
+                                                    <span style={S.badge('#f1f5f9', '#64748b')}>
+                                                        Grade {lesson.grade || 6}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            {stats && stats.count > 0 ? (
+                                                <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
+                                                    <div style={{ color: '#64748b' }}>
+                                                        <strong style={{ color: '#1a56db' }}>{stats.count}</strong> Attempts
+                                                    </div>
+                                                    <div style={{ color: '#64748b' }}>
+                                                        <strong style={{ color: stats.avgScore >= 70 ? '#059669' : '#ea580c' }}>{stats.avgScore}%</strong> Avg
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <span style={{ fontSize: 12, color: '#94a3b8' }}>No attempts</span>
+                                            )}
+                                        </div>
+
+                                        <div style={{ padding: 18, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+                                            {/* Content preview */}
+                                            <div style={{ padding: 14, backgroundColor: '#fafbfd', borderRadius: 10, border: '1px solid #f1f5f9', fontSize: 13 }}>
+                                                <div style={{ fontWeight: 600, color: '#374151', marginBottom: 8, fontSize: 13 }}>Lesson Content</div>
+                                                <div style={{ color: '#64748b', maxHeight: 72, overflow: 'hidden', lineHeight: 1.5 }}>
+                                                    {lesson.simplified_arabic || lesson.content || 'No content.'}
+                                                </div>
+                                            </div>
+
+                                            {/* Quiz preview */}
+                                            <div style={{ padding: 14, backgroundColor: '#fafbfd', borderRadius: 10, border: '1px solid #f1f5f9', fontSize: 13 }}>
+                                                <div style={{ fontWeight: 600, color: '#374151', marginBottom: 8, fontSize: 13 }}>Quiz Preview</div>
+                                                {(lesson.questions || []).length === 0 ? (
+                                                    <div style={{ color: '#94a3b8' }}>No questions.</div>
+                                                ) : (
+                                                    <div style={{ display: 'grid', gap: 6 }}>
+                                                        {(lesson.questions || []).slice(0, 3).map((q, qIdx) => (
+                                                            <div key={q.id || qIdx} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                                                                <span style={{ fontWeight: 700, color: '#1a56db', fontSize: 11, marginTop: 1 }}>Q{qIdx + 1}</span>
+                                                                <span style={{ color: '#475569', fontSize: 12, lineHeight: 1.4 }}>
+                                                                    {(q.text || q.question || '').slice(0, 60)}{(q.text || q.question || '').length > 60 ? '...' : ''}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                        {(lesson.questions || []).length > 3 && (
+                                                            <span style={{ fontSize: 11, color: '#94a3b8' }}>+{(lesson.questions || []).length - 3} more</span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </section>
+            </div>
         </div>
     );
 }
 
-const getLessonStats = (lesson: any) => {
-    // Basic stats calculation
-    return { count: 0, avgScore: 0 }; // Placeholder - real implementation should be done with loadAllAttempts
-};
+/* ─── Helper Components ─── */
+
+function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
+    return (
+        <div style={{
+            padding: '16px 20px', backgroundColor: '#fafbfd',
+            border: '1px solid #e8ecf0', borderRadius: 10,
+        }}>
+            <div style={{ fontSize: 28, fontWeight: 800, color, letterSpacing: -1 }}>{value}</div>
+            <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 500, marginTop: 2 }}>{label}</div>
+        </div>
+    );
+}
+
+function DifficultyCell({ level, mastered, accuracy, unlocked }: { level: string; mastered: boolean; accuracy: number; unlocked: boolean }) {
+    const locked = !unlocked && !mastered;
+    return (
+        <div style={{
+            padding: '10px 12px', borderRadius: 8,
+            backgroundColor: mastered ? '#f0fdf4' : locked ? '#f8fafc' : '#fff',
+            border: `1px solid ${mastered ? '#bbf7d0' : '#e8ecf0'}`,
+            opacity: locked ? 0.5 : 1,
+        }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: mastered ? '#166534' : '#374151', marginBottom: 2 }}>
+                {level} {mastered && <span style={{ color: '#16a34a' }}>&#10003;</span>}
+            </div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>{accuracy}% accuracy</div>
+            <div style={{ fontSize: 10, fontWeight: 500, color: mastered ? '#16a34a' : locked ? '#94a3b8' : '#64748b', marginTop: 2 }}>
+                {mastered ? 'Mastered' : locked ? 'Locked' : 'In Progress'}
+            </div>
+        </div>
+    );
+}
+
+function ToolBtn({ label, onClick, disabled, danger }: { label: string; onClick: () => void; disabled?: boolean; danger?: boolean }) {
+    return (
+        <button
+            onClick={onClick}
+            disabled={disabled}
+            style={{
+                display: 'block', width: '100%', textAlign: 'left' as const,
+                padding: '8px 12px', fontSize: 13, border: 'none', borderRadius: 8,
+                backgroundColor: 'transparent', cursor: disabled ? 'wait' : 'pointer',
+                color: danger ? '#dc2626' : '#374151',
+                opacity: disabled ? 0.5 : 1,
+            }}
+        >
+            {label}
+        </button>
+    );
+}
