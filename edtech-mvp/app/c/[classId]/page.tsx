@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { supabase } from '../../lib/supabase';
 import { StudentChat } from '../../components/StudentChat';
@@ -61,6 +61,140 @@ type PendingContext = {
     action: 'ask' | 'explain' | 'test';
 } | null;
 
+// ─── Lesson Content Renderer ─────────────────────────────────────────────────
+
+function renderLessonContent(text: string, fontSize: number): React.ReactNode {
+    if (!text) return null;
+    const lines = text.split('\n');
+    const elements: React.ReactNode[] = [];
+    let bulletBuffer: string[] = [];
+    let paraBuffer: string[] = [];
+
+    const flushPara = () => {
+        if (paraBuffer.length === 0) return;
+        const para = paraBuffer.join(' ').trim();
+        if (para) {
+            elements.push(
+                <p key={elements.length} style={{
+                    fontSize, lineHeight: 2.1, color: '#1e293b', margin: '0 0 18px 0',
+                    fontFamily: 'var(--font-cairo), "Noto Naskh Arabic", system-ui',
+                    textAlign: 'right'
+                }}>{para}</p>
+            );
+        }
+        paraBuffer = [];
+    };
+
+    const flushBullets = () => {
+        if (bulletBuffer.length === 0) return;
+        elements.push(
+            <ul key={elements.length} style={{ margin: '0 0 18px 0', padding: 0, listStyle: 'none' }}>
+                {bulletBuffer.map((item, i) => (
+                    <li key={i} style={{
+                        display: 'flex', gap: '10px', alignItems: 'flex-start',
+                        marginBottom: '10px', direction: 'rtl'
+                    }}>
+                        <span style={{
+                            width: '8px', height: '8px', borderRadius: '50%',
+                            background: '#1a56db', flexShrink: 0, marginTop: '10px'
+                        }} />
+                        <span style={{
+                            fontSize: fontSize - 1, lineHeight: 1.9, color: '#334155',
+                            fontFamily: 'var(--font-cairo), "Noto Naskh Arabic", system-ui',
+                            flex: 1, textAlign: 'right'
+                        }}>{item}</span>
+                    </li>
+                ))}
+            </ul>
+        );
+        bulletBuffer = [];
+    };
+
+    for (const raw of lines) {
+        const line = raw.trim();
+
+        // Blank line → flush buffers
+        if (!line) {
+            flushBullets();
+            flushPara();
+            continue;
+        }
+
+        // Heading: **text** pattern
+        const boldHeading = line.match(/^\*\*(.+?)\*\*$/);
+        if (boldHeading) {
+            flushBullets(); flushPara();
+            elements.push(
+                <div key={elements.length} style={{
+                    fontSize: fontSize + 3, fontWeight: 800, color: '#1a56db',
+                    margin: '28px 0 12px 0', paddingBottom: '8px',
+                    borderBottom: '2px solid #e0e7ff', textAlign: 'right',
+                    fontFamily: 'var(--font-cairo), "Noto Naskh Arabic", system-ui',
+                    letterSpacing: '-0.3px'
+                }}>{boldHeading[1]}</div>
+            );
+            continue;
+        }
+
+        // Short line with no sentence-ending punctuation → treat as heading
+        const noEndPunct = !/[.،؟!:…]$/.test(line);
+        if (line.length < 50 && noEndPunct && !line.startsWith('-') && !line.startsWith('•') && !/^\d+\./.test(line)) {
+            flushBullets(); flushPara();
+            elements.push(
+                <div key={elements.length} style={{
+                    fontSize: fontSize + 2, fontWeight: 700, color: '#0f172a',
+                    margin: '24px 0 10px 0', textAlign: 'right',
+                    fontFamily: 'var(--font-cairo), "Noto Naskh Arabic", system-ui',
+                }}>
+                    {line}
+                </div>
+            );
+            continue;
+        }
+
+        // Bullet: starts with "- " or "• " or "* "
+        if (/^[-•*]\s+/.test(line)) {
+            flushPara();
+            bulletBuffer.push(line.replace(/^[-•*]\s+/, ''));
+            continue;
+        }
+
+        // Numbered list: "1. " "٢. " etc.
+        const numberedMatch = line.match(/^(\d+|[١-٩][٠-٩]*)\.\s+(.+)/);
+        if (numberedMatch) {
+            flushPara();
+            flushBullets();
+            elements.push(
+                <div key={elements.length} style={{
+                    display: 'flex', gap: '10px', alignItems: 'flex-start',
+                    marginBottom: '10px', direction: 'rtl'
+                }}>
+                    <span style={{
+                        minWidth: '26px', height: '26px', borderRadius: '50%',
+                        background: '#e0e7ff', color: '#1a56db', fontSize: '13px',
+                        fontWeight: 800, display: 'flex', alignItems: 'center',
+                        justifyContent: 'center', flexShrink: 0, marginTop: '4px'
+                    }}>{numberedMatch[1]}</span>
+                    <span style={{
+                        fontSize: fontSize - 1, lineHeight: 1.9, color: '#334155',
+                        fontFamily: 'var(--font-cairo), "Noto Naskh Arabic", system-ui',
+                        flex: 1, textAlign: 'right'
+                    }}>{numberedMatch[2]}</span>
+                </div>
+            );
+            continue;
+        }
+
+        // Default: paragraph line
+        flushBullets();
+        paraBuffer.push(line);
+    }
+
+    flushBullets();
+    flushPara();
+    return elements;
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function StudentJoinPage() {
@@ -90,6 +224,9 @@ export default function StudentJoinPage() {
 
     // Simplified Arabic toggle
     const [showSimplified, setShowSimplified] = useState(false);
+
+    // Font size controls
+    const [fontSize, setFontSize] = useState(18);
 
     // Reading progress
     const [readingProgress, setReadingProgress] = useState(0);
@@ -417,6 +554,16 @@ export default function StudentJoinPage() {
                                                 {showSimplified ? '📖 نص كامل' : '🔤 مبسّط'}
                                             </button>
                                         )}
+                                        <button
+                                            onClick={() => setFontSize(s => Math.max(15, s - 1))}
+                                            style={{ ...S.pillBtn, background: '#f1f5f9', color: '#64748b', padding: '6px 11px' }}
+                                            title="تصغير الخط"
+                                        >A-</button>
+                                        <button
+                                            onClick={() => setFontSize(s => Math.min(24, s + 1))}
+                                            style={{ ...S.pillBtn, background: '#f1f5f9', color: '#64748b', padding: '6px 11px' }}
+                                            title="تكبير الخط"
+                                        >A+</button>
                                     </div>
                                 </div>
 
@@ -468,19 +615,14 @@ export default function StudentJoinPage() {
                                         onMouseUp={handleTextSelection}
                                         onTouchEnd={handleTextSelection}
                                         dir="rtl"
-                                        style={{
-                                            fontSize: '18px',
-                                            lineHeight: '1.95',
-                                            color: '#1e293b',
-                                            textAlign: 'right',
-                                            whiteSpace: 'pre-wrap',
-                                            userSelect: 'text',
-                                            cursor: 'text'
-                                        }}
+                                        style={{ userSelect: 'text', cursor: 'text' }}
                                     >
-                                        {showSimplified && activeLessonData.simplified_arabic
-                                            ? activeLessonData.simplified_arabic
-                                            : activeLessonData.content}
+                                        {renderLessonContent(
+                                            showSimplified && activeLessonData.simplified_arabic
+                                                ? activeLessonData.simplified_arabic
+                                                : activeLessonData.content,
+                                            fontSize
+                                        )}
                                     </div>
                                 </div>
                             </div>

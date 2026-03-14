@@ -34,6 +34,7 @@ ${content}
 Return ONLY a valid JSON object with this EXACT structure:
 {
     "title": "عنوان الدرس بالعربية",
+    "formattedContent": "النص الكامل للدرس منظّم بشكل جميل للطالب",
     "simplified_arabic": "شرح مبسط ومفصل للطلاب بالعربية الفصحى (3-4 فقرات) بناء على النص فقط",
     "podcast_script": "نص بودكاست تعليمي بالعربية المصرية العامية، يشرح الموضوع بأسلوب قصصي بناء على النص فقط (حوالي 200 كلمة)",
     "quiz_questions": [
@@ -44,6 +45,15 @@ Return ONLY a valid JSON object with this EXACT structure:
         }
     ]
 }
+
+RULES FOR formattedContent:
+- Take the raw chapter content and rewrite it as a clean, structured lesson for Grade 6 students in Arabic
+- Use **عنوان القسم** (double asterisks) to mark section headings
+- Use "- " at the start of lines for bullet points
+- Separate paragraphs with blank lines
+- Remove any OCR artifacts, page numbers, headers/footers, or formatting noise
+- Keep ALL factual content accurate — only improve structure and readability
+- Write in clear, formal Arabic (فصحى) suitable for Grade 6
 
 CRITICAL REQUIREMENTS:
 - Generate EXACTLY 10 quiz questions.
@@ -91,6 +101,8 @@ CRITICAL REQUIREMENTS:
         if (!parsed.title || !parsed.simplified_arabic || !parsed.podcast_script || !parsed.quiz_questions) {
             throw new Error('Invalid response structure from AI - missing required fields');
         }
+        // formattedContent is optional — fall back to raw input if AI omits it
+        const formattedContent = parsed.formattedContent || content;
 
         // Validate quiz questions
         if (!Array.isArray(parsed.quiz_questions) || parsed.quiz_questions.length === 0) {
@@ -116,6 +128,7 @@ CRITICAL REQUIREMENTS:
 
         return NextResponse.json({
             title: parsed.title,
+            formattedContent,
             simplified_arabic: parsed.simplified_arabic,
             podcast_script: parsed.podcast_script,
             quiz_questions: validatedQuestions

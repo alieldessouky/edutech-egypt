@@ -10,6 +10,7 @@ import { StudioQuizQuestion } from '../../lib/lessonStudioData';
 
 type LessonDraft = {
     title: string;
+    formattedContent?: string;
     simplified_arabic: string;
     podcast_script: string;
     quiz_questions: StudioQuizQuestion[];
@@ -62,6 +63,7 @@ export default function LessonStudioPage() {
             // Set the generated draft
             setDraft({
                 title: data.title,
+                formattedContent: data.formattedContent || chapterContent.trim(),
                 simplified_arabic: data.simplified_arabic,
                 podcast_script: data.podcast_script,
                 quiz_questions: data.quiz_questions
@@ -167,7 +169,7 @@ export default function LessonStudioPage() {
                 id: lessonId,
                 class_id: classId,
                 title: draft.title,
-                content: chapterContent.trim(),
+                content: draft.formattedContent || chapterContent.trim(),
                 simplified_arabic: draft.simplified_arabic,
                 podcast_script: draft.podcast_script,
                 created_at: new Date().toISOString(),
